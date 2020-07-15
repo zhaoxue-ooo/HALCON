@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="18.11.0.1">
+<procedure name="main">
+<interface/>
+<body>
+<c>*关闭窗口</c>
+<l>dev_close_window ()</l>
+<c>*关闭更新</c>
+<l>dev_update_off ()</l>
+<c>* </c>
+<c>* Step 1: Acquire image</c>
+<c>* </c>
+<c>*从文件路径读取图片</c>
+<l>list_files ('C:/Users/Lenovo/Desktop/马路裂缝', ['files','follow_links'], ImageFiles)</l>
+<l>tuple_regexp_select (ImageFiles, ['\\.(tif|tiff|gif|bmp|jpg|jpeg|jp2|png|pcx|pgm|ppm|pbm|xwd|ima|hobj)$','ignore_case'], ImageFiles)</l>
+<l>for Index := 0 to |ImageFiles| - 1 by 1</l>
+<l>read_image (Image, ImageFiles[Index])</l>
+<c>*获取图像的尺寸：宽、高，在坐标为（0,0）处打开一个图像窗口。其宽和高分别是Width和Height。</c>
+<l>get_image_size (Image, Width, Height)</l>
+<c>*打开窗口，窗体大小为原图大小，用画图软件测得，窗口的句柄为WindowHandle</c>
+<l>dev_open_window (0, 0, 847, 564, 'black', WindowHandle)</l>
+<l>set_display_font (WindowHandle, 14, 'mono', 'true', 'false')</l>
+<l>dev_set_draw ('margin')</l>
+<l>dev_set_line_width (3)</l>
+<l>dev_display (Image)</l>
+<l>Message := 'This program shows the extraction of'</l>
+<l>Message[1] := 'surface scratches via local thresholding'</l>
+<l>Message[2] := 'and morphological post-processing'</l>
+<l>disp_message (WindowHandle, Message, 'window', 12, 12, 'black', 'true')</l>
+<c>* 显示继续消息，等待用户按F5继续执行</c>
+<l>disp_continue_message (WindowHandle, 'black', 'true')</l>
+<l>stop ()</l>
+<c>* </c>
+<c>* Step 2: Segment image</c>
+<c>* </c>
+<c>* Using a local threshold</c>
+<c>*（mean_image）获取参考图像。offset设定邻域比较的区间范围，灰度值变化在offset范围内均是可以接受的。</c>
+<l>mean_image (Image, ImageMean, 7, 7)</l>
+<c>*选择灰度阈值；当前背景之间差异明显时，可以设定全局阈值进行threshold，但很多情况下由于背景不均一，  </c>
+<c>*目标体经常表现为比背景局部亮一些或暗一些，无法确定全局阈值操作，需要通过其邻域找到一个合适的阈值进  </c>
+<c>*行分割。ThresholdImage是参考图像，通过与OrigImage对比找到领域确定阈值，一般采用平滑滤波算子  </c>
+<l>dyn_threshold (Image, ImageMean, DarkPixels, 5, 'dark')</l>
+<c>*显示联通区域 </c>
+<l>connection (DarkPixels, ConnectedRegions)</l>
+<l>dev_set_colored (12)</l>
+<l>dev_display (Image)</l>
+<l>dev_display (ConnectedRegions)</l>
+<l>Message := 'Connected components after image segmentation'</l>
+<l>Message[1] := 'using a local threshold.'</l>
+<l>disp_message (WindowHandle, Message, 'window', 12, 12, 'black', 'true')</l>
+<l>disp_continue_message (WindowHandle, 'black', 'true')</l>
+<l>stop ()</l>
+<c>* </c>
+<c>* Step 3: Process regions</c>
+<c>* </c>
+<c>* Select large regions</c>
+<c>*select_shape算子的功能是计算Regions中所有输入region的特征（Features），如果计算的特征在[Min,Max]区间内，</c>
+<c>*则会将每一个符合要求的region（Operation = ‘and’）或者至少一个符合要求的region（Operation = 'or'）</c>
+<c>*复制到SelectedRegions中。</c>
+<l>select_shape (ConnectedRegions, SelectedRegions, 'area', 'and', 10, 1000)</l>
+<l>dev_display (Image)</l>
+<l>dev_display (SelectedRegions)</l>
+<l>disp_message (WindowHandle, 'Large Regions', 'window', 12, 12, 'black', 'true')</l>
+<l>disp_continue_message (WindowHandle, 'black', 'true')</l>
+<l>stop ()</l>
+<c></c>
+<l>ScaleFactor := 1.5</l>
+<l>calculate_lines_gauss_parameters (17, [25,3], Sigma, Low, High)</l>
+<l>    read_image (Image, ImageFiles[Index])</l>
+<c>    *将三通道彩色 图像进行拆分为R,G,B</c>
+<l>    decompose3 (Image, R, G, B)</l>
+<c>    * 计算图像B的快速傅立叶变换，也就是频域变换，ImageFFT为输出结果图像，to_freq表示从空间到频域变换。</c>
+<c>    *none表示变换的规范变化因数，complex表示输出图像为complex类型，width为图像宽度。</c>
+<l>    rft_generic (B, ImageFFT, 'to_freq', 'none', 'complex', Width)</l>
+<c>    *生成高斯滤波器ImageGauss，100为在空间域中高斯 在主方向生成的标准差，</c>
+<c>    *另100为空间域中高斯在正交于主方向 上的标准差，0表示滤波器主方向 上的角度 ，none为滤波器的规范。</c>
+<c>    *rft为直流项在频域的位置，最后两参数为图片你宽高。</c>
+<l>    gen_gauss_filter (ImageGauss, 100, 100, 0, 'n', 'rft', Width, Height)</l>
+<c>    *在频域图片ImageFFT上，用高斯滤波器ImageGauss做卷积。</c>
+<l>    convol_fft (ImageFFT, ImageGauss, ImageConvol)</l>
+<c>    *与上一个rft_generic做反向运算，将频域图像转换为空间域的图像。</c>
+<l>    rft_generic (ImageConvol, ImageFFT1, 'from_freq', 'none', 'byte', Width)</l>
+<c>   *将两幅图像做减法运算，公式为g':= (g1 - g2) * Mult + Add。</c>
+<c>   *g1,g2表示B, ImageFFT1的灰度值，g表示计算结果图ImageSub，2为Mult,100为Add。</c>
+<l>    sub_image (B, ImageFFT1, ImageSub, 0.5, 100)</l>
+<c>    * 将图像ImageSub进行放大观察，ImageZoomed为放大后的图像，ScaleFactor, ScaleFactor为长宽放大加数，</c>
+<c>    *constant为插值方法。</c>
+<l>    zoom_image_factor (ImageSub, ImageZoomed, ScaleFactor, ScaleFactor, 'constant')</l>
+<c>    * 获取一幅图的区域，目的为避免边框对lines_gauss的影响。</c>
+<l>    get_domain (ImageZoomed, Domain)</l>
+<c>    *对图像 进行腐蚀运算处理，7，7为矩形 结构宽高。</c>
+<l>    erosion_rectangle1 (Domain, RegionErosion, 7, 7)</l>
+<c>    *在图像ImageZoomed截取RegionErosion大小图片，存放到变量ImageReduced</c>
+<l>    reduce_domain (ImageZoomed, RegionErosion, ImageReduced)</l>
+<c>    *检测图像的线条与宽度。ImageReduced, Lines为输入图像与输出的亚像素线条,</c>
+<c>    *Sigma为高斯平滑系数, Low为后滞阈值分隔低值, High为前置阈值分割高值,</c>
+<c>    *'dark'表示 提取图像 中的暗线条, 'true'表示 是否提取线条宽度, 'gaussian'提取线条的模式，</c>
+<c>    *gaussian在线条不锐利时使用, 'true'表示添加 能够 提取的接合点。</c>
+<l>    lines_gauss (ImageReduced, Lines, Sigma, Low, High, 'dark', 'true', 'gaussian', 'true')</l>
+<c>    *生成齐次转换矩阵</c>
+<l>    hom_mat2d_identity (HomMat2DIdentity)</l>
+<c>    *添加缩放的齐次转换矩阵，HomMat2DIdentity为输入矩阵,</c>
+<c>    *1 / ScaleFactor, 1 / ScaleFactor为缩放因数, HomMat2DScale为输出的矩阵。</c>
+<l>    hom_mat2d_scale_local (HomMat2DIdentity, 1 / ScaleFactor, 1 / ScaleFactor, HomMat2DScale)</l>
+<c>    *对亚像素直线Lines进行仿射变换。</c>
+<l>    affine_trans_contour_xld (Lines, Defects, HomMat2DScale)</l>
+<c>    *获取区域的面积和中心点坐标</c>
+<l>    area_center (DarkPixels, Area, Row, Column)</l>
+<c>    *获取区域的周长</c>
+<l>    contlength (DarkPixels, ContLength)</l>
+<c>    *获取轮廓的宽度</c>
+<l>    height_width_ratio_xld(Defects,Height,Length,Ratio)</l>
+<c>    *设置字体显示格式</c>
+<l>    set_display_font (WindowHandle, 16, 'mono', 'true', 'false')  </l>
+<c>    *region的填充模式为margin只显示轮廓</c>
+<l>    dev_set_draw ('margin') </l>
+<c>    *设置线宽，这个在填充类型为fill时效果不明显</c>
+<l>    dev_set_line_width (3)</l>
+<l>    dev_display (Image)</l>
+<l>    dev_display (Defects)</l>
+<l>    disp_continue_message (WindowHandle, 'black', 'true')</l>
+<l>    stop ()</l>
+<c>    *显示文字</c>
+<l>    disp_message (WindowHandle, '面积为'+Area, 'window', 10, 150, 'red', 'true')</l>
+<l>    disp_message (WindowHandle, '周长为'+ContLength, 'window', 40, 150, 'red', 'true')</l>
+<l>    disp_message (WindowHandle, '长度为'+Length, 'window', 70, 60, 'red', 'true')</l>
+<l>    disp_message (WindowHandle, '宽度为'+Height, 'window', 70, 220, 'red', 'true')</l>
+<l>    stop ()</l>
+<c></c>
+<l>endfor</l>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+<procedure name="open_zoom_window">
+<interface>
+<ic>
+<par name="RowPos" base_type="ctrl" dimension="0"/>
+<par name="ColPos" base_type="ctrl" dimension="0"/>
+<par name="RowROI1" base_type="ctrl" dimension="0"/>
+<par name="ColROI1" base_type="ctrl" dimension="0"/>
+<par name="RowROI2" base_type="ctrl" dimension="0"/>
+<par name="ColROI2" base_type="ctrl" dimension="0"/>
+<par name="ZoomFactor" base_type="ctrl" dimension="0"/>
+</ic>
+<oc>
+<par name="WindowHandleZoom" base_type="ctrl" dimension="0"/>
+</oc>
+</interface>
+<body>
+<l>dev_open_window (RowPos, ColPos, (ColROI2 - ColROI1) * ZoomFactor, (RowROI2 - RowROI1) * ZoomFactor, 'black', WindowHandleZoom)</l>
+<l>dev_set_part (round(RowROI1), round(ColROI1), round(RowROI2), round(ColROI2))</l>
+<l>return ()</l>
+</body>
+<docu id="open_zoom_window">
+<short lang="en_US">open window and set part</short>
+<short lang="zh_CN">open window and set part</short>
+<parameters>
+<parameter id="ColPos"/>
+<parameter id="ColROI1"/>
+<parameter id="ColROI2"/>
+<parameter id="RowPos"/>
+<parameter id="RowROI1"/>
+<parameter id="RowROI2"/>
+<parameter id="WindowHandleZoom"/>
+<parameter id="ZoomFactor"/>
+</parameters>
+</docu>
+</procedure>
+</hdevelop>
